@@ -28,8 +28,8 @@ TinyGPSPlus gps;             // The TinyGPS++ object
 float latitude, longitude; // Variables to store latitude and longitude
 
 // for server
-#define GPS_URL "http://192.168.254.7:8000/vehicle/test/"
-#define NFC_URL "http://192.168.254.51:8000/vehicle/test/"
+#define GPS_URL "http://192.168.254.51:8000/vehicle/update_coords"
+#define NFC_URL "http://192.168.254.51:8000/fare/scanned"
 
 // for each device
 int GPS_ID = 1;
@@ -109,61 +109,62 @@ TaskHandle_t Task1;
 // second loop for gps
 void Loop2(void *parameter)
 {
-
-  while (1)
+  for (;;)
   {
-    Serial.println("GPS location sent");
-    delay(5000);
+    // Read GPS data if available
+    while (gpsSerial.available() > 0)
+    {
+      gps.encode(gpsSerial.read());
+    }
+
+    // Check if GPS data is updated
+    if (gps.location.isUpdated())
+    {
+      // Retrieve latitude and longitude
+      latitude = gps.location.lat();
+      longitude = gps.location.lng();
+
+      // Check WiFi connection
+      if (WiFi.status() == WL_CONNECTED)
+      {
+        // Create JSON payload
+        String jsonPayload = "{\"gps_id\":\"" + String(GPS_ID) + "\",\"Lat\":\"" + String(latitude, 6) + "\",\"Lng\":\"" + String(longitude, 6) + "\"}";
+
+        // Send HTTP POST request
+        HTTPClient http;
+        http.begin(GPS_URL);
+        http.addHeader("Content-Type", "application/json");
+
+        int httpResponseCode = http.POST(jsonPayload);
+
+        if (httpResponseCode > 0)
+        {
+          Serial.print("HTTP Response code: ");
+          Serial.println(httpResponseCode);
+        }
+        else
+        {
+          Serial.print("Error on sending POST: ");
+          Serial.println(httpResponseCode);
+        }
+
+        http.end();
+      }
+      else
+      {
+        Serial.println("WiFi Disconnected, connecting again...");
+        connectToWiFi(); // Reconnect to WiFi if disconnected
+      }
+
+      // Delay to avoid spamming the server with requests
+      vTaskDelay(pdMS_TO_TICKS(10000)); // Adjust the delay as needed
+    }
+    else
+    {
+      // GPS data not updated, wait for a while before checking again
+      vTaskDelay(pdMS_TO_TICKS(5000)); // Adjust the delay as needed
+    }
   }
-
-  // while (gpsSerial.available() > 0)
-  // {
-  //   gps.encode(gpsSerial.read());
-
-  //   if (gps.location.isUpdated())
-  //   {
-  //     latitude = gps.location.lat();
-  //     longitude = gps.location.lng();
-
-  //     // Serial.print("Latitude: ");
-  //     // Serial.println(latitude, 6);
-  //     // Serial.print("Longitude: ");
-  //     // Serial.println(longitude, 6);
-
-  //     // Create JSON payload
-  //     // Send the HTTP POST request
-  //     if (WiFi.status() == WL_CONNECTED)
-  //     {
-  //       String jsonPayload = "{\"gps_id\":\"" + String(GPS_ID) + "\",\"Lat\":\"" + String(latitude, 6) + "\",\"Lng\":\"" + String(longitude, 6) + "\"}";
-  //       HTTPClient http;
-  //       http.begin(GPS_URL);
-  //       http.addHeader("Content-Type", "application/json");
-
-  //       int httpResponseCode = http.POST(jsonPayload);
-
-  //       if (httpResponseCode > 0)
-  //       {
-  //         Serial.print("HTTP Response code: ");
-  //         Serial.println(httpResponseCode);
-  //       }
-  //       else
-  //       {
-  //         Serial.print("Error on sending POST: ");
-  //         Serial.println(httpResponseCode);
-  //       }
-
-  //       http.end();
-  //     }
-  //     else
-  //     {
-  //       Serial.println("WiFi Disconnected,connecting again...");
-  //       connectToWiFi();
-  //     }
-
-  //     // Delay to avoid spamming the server with requests
-  //     delay(5000); // Adjust the delay as needed
-  //   }
-  // }
 }
 
 void setup()
