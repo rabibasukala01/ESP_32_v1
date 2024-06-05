@@ -3,6 +3,7 @@
 // for nfc
 #include <Wire.h>
 #include <Adafruit_PN532.h>
+#include "SPIFFS.h"
 #define SDA_PIN 21
 #define SCL_PIN 22
 
@@ -28,8 +29,8 @@ TinyGPSPlus gps;             // The TinyGPS++ object
 float latitude, longitude; // Variables to store latitude and longitude
 
 // for server
-#define GPS_URL "http://192.168.254.51:8000/vehicle/update_coords"
-#define NFC_URL "http://192.168.254.51:8000/fare/scanned"
+#define GPS_URL "http://192.168.254.2:8000/vehicle/update_coords"
+#define NFC_URL "http://192.168.254.2:8000/vehicle/test"
 
 // for each device
 int GPS_ID = 1;
@@ -37,7 +38,7 @@ int GPS_ID = 1;
 // function for nfc reader
 String nfc_reader()
 {
-  Serial.println("Found an NFC card!");
+  Serial.println("Found an NFC Reader!");
   uint8_t success;
   uint8_t uid[] = {0, 0, 0, 0, 0, 0, 0};
   uint8_t uidLength;
@@ -104,6 +105,37 @@ void connectToWiFi()
   }
 }
 
+void postRequest(String jsonPayload, String URL)
+{
+  if (WiFi.status() == WL_CONNECTED)
+  {
+    // Send HTTP POST request
+    HTTPClient http;
+    http.begin(URL);
+    http.addHeader("Content-Type", "application/json");
+
+    int httpResponseCode = http.POST(jsonPayload);
+
+    if (httpResponseCode > 0)
+    {
+      Serial.print("HTTP Response code: ");
+      Serial.println(httpResponseCode);
+    }
+    else
+    {
+      Serial.print("Error on sending POST: ");
+      Serial.println(httpResponseCode);
+    }
+
+    http.end();
+  }
+  else
+  {
+    Serial.println("WiFi Disconnected, connecting again...");
+    connectToWiFi(); // Reconnect to WiFi if disconnected
+  }
+}
+
 // task handleer
 TaskHandle_t Task1;
 // second loop for gps
@@ -124,37 +156,10 @@ void Loop2(void *parameter)
       latitude = gps.location.lat();
       longitude = gps.location.lng();
 
-      // Check WiFi connection
-      if (WiFi.status() == WL_CONNECTED)
-      {
-        // Create JSON payload
-        String jsonPayload = "{\"gps_id\":\"" + String(GPS_ID) + "\",\"Lat\":\"" + String(latitude, 6) + "\",\"Lng\":\"" + String(longitude, 6) + "\"}";
+      // post
+      String jsonPayload = "{\"gps_id\":\"" + String(GPS_ID) + "\",\"Lat\":\"" + String(latitude, 6) + "\",\"Lng\":\"" + String(longitude, 6) + "\"}";
 
-        // Send HTTP POST request
-        HTTPClient http;
-        http.begin(GPS_URL);
-        http.addHeader("Content-Type", "application/json");
-
-        int httpResponseCode = http.POST(jsonPayload);
-
-        if (httpResponseCode > 0)
-        {
-          Serial.print("HTTP Response code: ");
-          Serial.println(httpResponseCode);
-        }
-        else
-        {
-          Serial.print("Error on sending POST: ");
-          Serial.println(httpResponseCode);
-        }
-
-        http.end();
-      }
-      else
-      {
-        Serial.println("WiFi Disconnected, connecting again...");
-        connectToWiFi(); // Reconnect to WiFi if disconnected
-      }
+      postRequest(jsonPayload, GPS_URL);
 
       // Delay to avoid spamming the server with requests
       vTaskDelay(pdMS_TO_TICKS(10000)); // Adjust the delay as needed
@@ -221,38 +226,7 @@ void loop()
     // Create JSON payload
     // String jsonPayload = "{\"nfc_id\":\"" + nfc_hex_data + "\"}";
     String jsonPayload = "{\"nfc_id\":\"" + nfc_hex_data + "\",\"gps_id\":\"" + String(GPS_ID) + "\",\"Lat\":\"" + String(latitude, 6) + "\",\"Lng\":\"" + String(longitude, 6) + "\"}";
-
-    // Send the HTTP POST request
-    if (WiFi.status() == WL_CONNECTED)
-    {
-      HTTPClient http;
-      http.begin(NFC_URL);
-      http.addHeader("Content-Type", "application/json");
-
-      int httpResponseCode = http.POST(jsonPayload);
-
-      if (httpResponseCode > 0)
-      {
-        // TODO: REMOVE BELOW LATER
-        String response = http.getString();
-        Serial.print("HTTP Response code: ");
-        Serial.println(httpResponseCode);
-        Serial.print("Response: ");
-        Serial.println(response);
-      }
-      else
-      {
-        Serial.print("Error on sending POST: ");
-        Serial.println(httpResponseCode);
-      }
-
-      http.end();
-    }
-    else
-    {
-      Serial.println("WiFi Disconnected,connecting again...");
-      connectToWiFi();
-    }
+    postRequest(jsonPayload, NFC_URL);
   }
 
   delay(1000); // Adjust the delay as needed
