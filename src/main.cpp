@@ -31,6 +31,8 @@ float latitude, longitude; // Variables to store latitude and longitude
 // for server
 #define GPS_URL "http://192.168.254.2:8000/vehicle/update_coords"
 #define NFC_URL "http://192.168.254.2:8000/vehicle/test"
+#define IN_URL "http://192.168.254.2:8000/fare/scanned/in"
+#define OUT_URL "http://192.168.254.2:8000/fare/scanned/out"
 
 // for each device
 int GPS_ID = 1;
@@ -136,6 +138,110 @@ void postRequest(String jsonPayload, String URL)
   }
 }
 
+// For storing NFC scan data
+void storeScanData(String tagData, int scanCount)
+{
+  File file = SPIFFS.open("/scans.txt", FILE_APPEND);
+  if (!file)
+  {
+    Serial.println("Failed to open file for writing");
+    return;
+  }
+  file.println(tagData + "," + String(scanCount));
+  Serial.println("Stored scan data: " + tagData + "," + String(scanCount));
+  file.close();
+}
+
+// For NFC scan count
+int getScanCount(String tagData)
+{
+  File file = SPIFFS.open("/scans.txt", FILE_READ);
+  if (!file)
+  {
+    Serial.println("Failed to open file for reading");
+    return -1;
+  }
+  while (file.available())
+  {
+    String line = file.readStringUntil('\n');
+    if (line.startsWith(tagData))
+    {
+      file.close();
+      return line.substring(tagData.length() + 1).toInt();
+    }
+  }
+  file.close();
+  return 0; // Tag not found
+}
+
+// For deleting NFC scan data
+void deleteScanData(String tagData)
+{
+  File file = SPIFFS.open("/scans.txt", FILE_READ);
+  if (!file)
+  {
+    Serial.println("Failed to open file for reading");
+    return;
+  }
+
+  // Create a temporary file to write data except the specified tag data
+  File tempFile = SPIFFS.open("/temp.txt", FILE_WRITE);
+  if (!tempFile)
+  {
+    Serial.println("Failed to open temp file for writing");
+    file.close();
+    return;
+  }
+
+  // Copy data from the original file to the temp file, excluding the specified tag data
+  while (file.available())
+  {
+    String line = file.readStringUntil('\n');
+    if (!line.startsWith(tagData))
+    {
+      tempFile.println(line);
+    }
+  }
+
+  // Close both files
+  file.close();
+  tempFile.close();
+
+  // Remove the original file
+  SPIFFS.remove("/scans.txt");
+
+  // Rename the temp file to the original file name
+  SPIFFS.rename("/temp.txt", "/scans.txt");
+}
+
+// For updating NFC scan count
+void updateScanCount(String tagData)
+{
+  int scanCount = getScanCount(tagData);
+  if (scanCount == -1)
+  {
+    Serial.println("Error reading scan count");
+    return;
+  }
+  if (scanCount == 0)
+  {
+    // First scan
+    storeScanData(tagData, 1);
+    Serial.println("First scan for tag: " + tagData);
+    String jsonPayload = "{\"nfc_id\":\"" + tagData + "\",\"gps_id\":\"" + String(GPS_ID) + "\",\"Lat\":\"" + String(latitude, 6) + "\",\"Lng\":\"" + String(longitude, 6) + "\"}";
+    postRequest(jsonPayload, IN_URL);
+  }
+  else
+  {
+    // Second scan
+    Serial.println("second scan for tag: " + tagData);
+    // delete the data
+    deleteScanData(tagData);
+    String jsonPayload = "{\"nfc_id\":\"" + tagData + "\",\"gps_id\":\"" + String(GPS_ID) + "\",\"Lat\":\"" + String(latitude, 6) + "\",\"Lng\":\"" + String(longitude, 6) + "\"}";
+    postRequest(jsonPayload, OUT_URL);
+  }
+}
+
 // task handleer
 TaskHandle_t Task1;
 // second loop for gps
@@ -195,6 +301,20 @@ void setup()
   nfc.SAMConfig();
   Serial.println("Waiting for an NFC card ...");
 
+  // for SPIFFS storage
+  if (!SPIFFS.begin(true))
+  {
+    Serial.println("Failed to mount SPIFFS. Formatting...");
+    SPIFFS.format();
+    if (!SPIFFS.begin(true))
+    {
+      Serial.println("Failed to mount SPIFFS even after formatting.");
+      return;
+    }
+    Serial.println("SPIFFS mounted after formatting.");
+  }
+  Serial.println("SPIFFS mounted successfully.");
+
   // Create a task to handle the GPS data
   xTaskCreatePinnedToCore(
       Loop2,   /* Task function. */
@@ -215,6 +335,8 @@ void loop()
   if (nfc_hex_data != "error")
   {
     Serial.println("NFC Data: " + nfc_hex_data);
+    // XXX Call for update scan count
+    updateScanCount(nfc_hex_data);
     gps.encode(gpsSerial.read());
     latitude = gps.location.lat();
     longitude = gps.location.lng();
@@ -225,8 +347,8 @@ void loop()
 
     // Create JSON payload
     // String jsonPayload = "{\"nfc_id\":\"" + nfc_hex_data + "\"}";
-    String jsonPayload = "{\"nfc_id\":\"" + nfc_hex_data + "\",\"gps_id\":\"" + String(GPS_ID) + "\",\"Lat\":\"" + String(latitude, 6) + "\",\"Lng\":\"" + String(longitude, 6) + "\"}";
-    postRequest(jsonPayload, NFC_URL);
+    // String jsonPayload = "{\"nfc_id\":\"" + nfc_hex_data + "\",\"gps_id\":\"" + String(GPS_ID) + "\",\"Lat\":\"" + String(latitude, 6) + "\",\"Lng\":\"" + String(longitude, 6) + "\"}";
+    // postRequest(jsonPayload, NFC_URL);
   }
 
   delay(1000); // Adjust the delay as needed
