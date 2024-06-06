@@ -1,8 +1,5 @@
 {
     "files.associations": {
-        "**/*.html": "html",
-        "**/templates/*/*.html": "django-html",
-        "**/templates/*": "django-html",
         "**/requirements{/**,*}.{txt,in}": "pip-requirements",
         "array": "cpp",
         "string": "cpp",
