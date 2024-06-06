@@ -30,7 +30,6 @@ float latitude, longitude; // Variables to store latitude and longitude
 
 // for server
 #define GPS_URL "http://192.168.254.2:8000/vehicle/update_coords"
-#define NFC_URL "http://192.168.254.2:8000/vehicle/test"
 #define IN_URL "http://192.168.254.2:8000/fare/scanned/in"
 #define OUT_URL "http://192.168.254.2:8000/fare/scanned/out"
 
@@ -344,11 +343,6 @@ void loop()
     Serial.println(latitude, 6);
     Serial.print("Longitude: ");
     Serial.println(longitude, 6);
-
-    // Create JSON payload
-    // String jsonPayload = "{\"nfc_id\":\"" + nfc_hex_data + "\"}";
-    // String jsonPayload = "{\"nfc_id\":\"" + nfc_hex_data + "\",\"gps_id\":\"" + String(GPS_ID) + "\",\"Lat\":\"" + String(latitude, 6) + "\",\"Lng\":\"" + String(longitude, 6) + "\"}";
-    // postRequest(jsonPayload, NFC_URL);
   }
 
   delay(1000); // Adjust the delay as needed
