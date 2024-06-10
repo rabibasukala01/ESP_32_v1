@@ -29,17 +29,21 @@ TinyGPSPlus gps;             // The TinyGPS++ object
 float latitude, longitude; // Variables to store latitude and longitude
 
 // for server
-#define GPS_URL "http://192.168.254.2:8000/vehicle/update_coords"
-#define IN_URL "http://192.168.254.2:8000/fare/scanned/in"
-#define OUT_URL "http://192.168.254.2:8000/fare/scanned/out"
+String BASE_URL = "http://192.168.254.39:8000";
+#define GPS_URL BASE_URL + "/vehicle/update_coords"
+#define IN_URL BASE_URL + "/fare/scanned/in"
+#define OUT_URL BASE_URL + "/fare/scanned/out"
+#define MOBILE_URL_IN BASE_URL + "/fare/mobile_scanned/in"
+#define MOBILE_URL_OUT BASE_URL + "/fare/mobile_scanned/out"
 
-// for each device
-int GPS_ID = 1;
+// for each device/bus/driver_account_id
+int GPS_ID = 7;
 
 // function for nfc reader
 String nfc_reader()
 {
-  Serial.println("Found an NFC Reader!");
+  Serial.println("Tag found");
+  Serial.println("Scanning NFC card...");
   uint8_t success;
   uint8_t uid[] = {0, 0, 0, 0, 0, 0, 0};
   uint8_t uidLength;
@@ -59,6 +63,7 @@ String nfc_reader()
       unsigned char TextOutput[16];
       success = nfc.mifareclassic_ReadDataBlock(2 * 4 + 2, data);
 
+      // data is in HEX format [encypted by aes]
       if (success)
       {
         String hexString = "";
@@ -72,15 +77,15 @@ String nfc_reader()
       }
       else
       {
-        Serial.println("Failed to read custom data.");
+        Serial.println("Failed to Scan.");
       }
     }
     else
     {
-      Serial.println("Authentication with Key A failed.");
+      Serial.println("Authentication  failed.");
     }
 
-    delay(50);
+    delay(1000);
   }
   return "error"; // Return an empty string if there's an error or no NFC card found
 }
@@ -119,13 +124,19 @@ void postRequest(String jsonPayload, String URL)
 
     if (httpResponseCode > 0)
     {
-      Serial.print("HTTP Response code: ");
+      Serial.print("HTTP Response code:");
       Serial.println(httpResponseCode);
+      String response = http.getString();
+      Serial.print("Response message: ");
+      Serial.println(response);
     }
     else
     {
-      Serial.print("Error on sending POST: ");
+      Serial.print("Error code:");
       Serial.println(httpResponseCode);
+      String response = http.getString();
+      Serial.print("Response message: ");
+      Serial.println(response);
     }
 
     http.end();
@@ -213,7 +224,7 @@ void deleteScanData(String tagData)
   SPIFFS.rename("/temp.txt", "/scans.txt");
 }
 
-// For updating NFC scan count
+// For updating TAG-NFC scan count
 void updateScanCount(String tagData)
 {
   int scanCount = getScanCount(tagData);
@@ -225,20 +236,102 @@ void updateScanCount(String tagData)
   if (scanCount == 0)
   {
     // First scan
+
     storeScanData(tagData, 1);
     Serial.println("First scan for tag: " + tagData);
-    String jsonPayload = "{\"nfc_id\":\"" + tagData + "\",\"gps_id\":\"" + String(GPS_ID) + "\",\"Lat\":\"" + String(latitude, 6) + "\",\"Lng\":\"" + String(longitude, 6) + "\"}";
+    gps.encode(gpsSerial.read());
+    // float first_lat = gps.location.lat();
+    // float first_lng = gps.location.lng();
+    // TODO : get the gps data
+    float first_lat = 27.675814;
+    float first_lng = 85.429938;
+    String jsonPayload = "{\"nfc_id\":\"" + tagData + "\",\"gps_id\":\"" + String(GPS_ID) + "\",\"Lat\":\"" + String(first_lat, 6) + "\",\"Lng\":\"" + String(first_lng, 6) + "\"}";
     postRequest(jsonPayload, IN_URL);
   }
   else
   {
     // Second scan
+
     Serial.println("second scan for tag: " + tagData);
+
+    gps.encode(gpsSerial.read());
+    // float second_lat = gps.location.lat();
+    // float second_lng = gps.location.lng();
+    // TODO : get the gps data
+    float second_lat = 27.671371;
+    float second_lng = 85.420833;
+    String jsonPayload = "{\"nfc_id\":\"" + tagData + "\",\"gps_id\":\"" + String(GPS_ID) + "\",\"Lat\":\"" + String(second_lat, 6) + "\",\"Lng\":\"" + String(second_lng, 6) + "\"}";
+    Serial.println("Verifying payment...");
+    postRequest(jsonPayload, OUT_URL);
     // delete the data
     deleteScanData(tagData);
-    String jsonPayload = "{\"nfc_id\":\"" + tagData + "\",\"gps_id\":\"" + String(GPS_ID) + "\",\"Lat\":\"" + String(latitude, 6) + "\",\"Lng\":\"" + String(longitude, 6) + "\"}";
-    postRequest(jsonPayload, OUT_URL);
   }
+}
+
+// FOR UPDATING SCAN COUNT FOR MOBILE DEVICE
+void updateScanCountMOBILE(String tagData)
+{
+  int scanCount = getScanCount(tagData);
+  if (scanCount == -1)
+  {
+    Serial.println("Error reading scan count");
+    return;
+  }
+  if (scanCount == 0)
+  // First scan
+  {
+
+    storeScanData(tagData, 1);
+    Serial.println("First scan for tag: " + tagData);
+
+    // coords in first scan
+    gps.encode(gpsSerial.read());
+    // float first_lat = gps.location.lat();
+    // float first_lng = gps.location.lng();
+    // TODO : get the gps data
+
+    float first_lat = 27.675814;
+    float first_lng = 85.429938;
+
+    String jsonPayload = "{\"nfc_id\":\"" + tagData + "\",\"gps_id\":\"" + String(GPS_ID) + "\",\"Lat\":\"" + String(first_lat, 6) + "\",\"Lng\":\"" + String(first_lng, 6) + "\"}";
+    postRequest(jsonPayload, MOBILE_URL_IN);
+  }
+  else
+  // Second scan
+  {
+    Serial.println("second scan for tag: " + tagData);
+
+    // coords in second scan
+    gps.encode(gpsSerial.read());
+    // float second_lat = gps.location.lat();
+    // float second_lng = gps.location.lng();
+    // TODO : get the gps data
+
+    float second_lat = 27.671371;
+    float second_lng = 85.420833;
+
+    String jsonPayload = "{\"nfc_id\":\"" + tagData + "\",\"gps_id\":\"" + String(GPS_ID) + "\",\"Lat\":\"" + String(second_lat, 6) + "\",\"Lng\":\"" + String(second_lng, 6) + "\"}";
+    Serial.println("Verifying payment...");
+    postRequest(jsonPayload, MOBILE_URL_OUT);
+    // delete the data
+    deleteScanData(tagData);
+  }
+}
+
+// this is responsible for reading the data from the mobile device response
+// and converting it to plain string format [no hex, no encryptions]
+String extract_payload(const byte *data, const long numBytes)
+{
+  // numBytes is the length of the data array with data and response code [0x90, 0x00=>success]
+  String payload = "";
+  Serial.print("Received data: ");
+  for (int i = 0; i < 10; i++)
+  {
+    // Serial.print(data[i]);
+    payload += data[i];
+  }
+  Serial.println(payload);
+  return payload;
 }
 
 // task handleer
@@ -280,6 +373,7 @@ void Loop2(void *parameter)
 void setup()
 {
   Serial.begin(115200);
+  // Serial.println(GPS_URL);
 
   // gps
   gpsSerial.begin(9600, SERIAL_8N1, 16, 17); // RX, TX
@@ -329,20 +423,53 @@ void setup()
 void loop()
 {
 
-  // handle post request for nfc tag
-  String nfc_hex_data = nfc_reader();
-  if (nfc_hex_data != "error")
+  bool success;
+  uint8_t responseLength = 32;
+
+  success = nfc.inListPassiveTarget();
+
+  if (success)
   {
-    Serial.println("NFC Data: " + nfc_hex_data);
-    // XXX Call for update scan count
-    updateScanCount(nfc_hex_data);
-    gps.encode(gpsSerial.read());
-    latitude = gps.location.lat();
-    longitude = gps.location.lng();
-    Serial.print("Latitude: ");
-    Serial.println(latitude, 6);
-    Serial.print("Longitude: ");
-    Serial.println(longitude, 6);
+
+    uint8_t selectApdu[] = {0x00,                                     /* CLA */
+                            0xA4,                                     /* INS */
+                            0x04,                                     /* P1  */
+                            0x00,                                     /* P2  */
+                            0x07,                                     /* Length of AID  */
+                            0xF0, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, /* AID defined on Android App */
+                            0x00 /* Le  */};
+
+    uint8_t response[32]; // Buffer to store the response
+    success = nfc.inDataExchange(selectApdu, sizeof(selectApdu), response, &responseLength);
+    if (success)
+    // handle for mobile device
+    {
+      delay(25);
+      Serial.print("Mobile device found");
+
+      // extyract the payload
+      String payload_tag = extract_payload(response, responseLength);
+
+      // TODO: handle payload here
+      updateScanCountMOBILE(payload_tag);
+    }
+    else
+    // handle request for nfc TAG
+    {
+      delay(25);
+
+      String nfc_hex_data = nfc_reader();
+      if (nfc_hex_data != "error")
+      {
+        Serial.println("NFC Data: " + nfc_hex_data);
+        // Call for update scan count
+        updateScanCount(nfc_hex_data);
+      }
+    }
+  }
+  else
+  {
+    Serial.println("Scan Here!");
   }
 
   delay(1000); // Adjust the delay as needed
