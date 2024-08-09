@@ -1,5 +1,11 @@
 
 // --------------------------------------------------------------------------------
+// for lcd
+#include <LiquidCrystal_I2C.h>
+
+// Create an instance of the LCD with the I2C address (0x27 is common; check your display's address)
+LiquidCrystal_I2C lcd(0x3F, 16, 2); // Adjust address and size as needed
+
 // for nfc
 #include <Wire.h>
 #include <Adafruit_PN532.h>
@@ -29,12 +35,15 @@ TinyGPSPlus gps;             // The TinyGPS++ object
 float latitude, longitude; // Variables to store latitude and longitude
 
 // for server
-String BASE_URL = "http://192.168.254.39:8000";
+String BASE_URL = "http://192.168.254.18:8000";
 #define GPS_URL BASE_URL + "/vehicle/update_coords"
 #define IN_URL BASE_URL + "/fare/scanned/in"
 #define OUT_URL BASE_URL + "/fare/scanned/out"
 #define MOBILE_URL_IN BASE_URL + "/fare/mobile_scanned/in"
 #define MOBILE_URL_OUT BASE_URL + "/fare/mobile_scanned/out"
+
+// for buzzere
+#define BUZZER_PIN 19
 
 // for each device/bus/driver_account_id
 int GPS_ID = 7;
@@ -56,6 +65,12 @@ String nfc_reader()
 
     if (success)
     {
+      lcd.clear();
+      lcd.print("Authenticated");
+      digitalWrite(BUZZER_PIN, HIGH);
+      delay(50); // Wait for m second
+      // Turn the LED off
+      digitalWrite(BUZZER_PIN, LOW);
       Serial.println("Authentication with Key A successful.");
 
       // Read data from block 2 of sector 2
@@ -375,11 +390,32 @@ void setup()
   Serial.begin(115200);
   // Serial.println(GPS_URL);
 
+  // buzzer
+  pinMode(BUZZER_PIN, OUTPUT);
+
   // gps
   gpsSerial.begin(9600, SERIAL_8N1, 16, 17); // RX, TX
 
   // Connect to WiFi
   connectToWiFi();
+
+  // lcd SETUP
+  // Initialize I2C with custom pins
+  Wire.begin(SDA_PIN, SCL_PIN);
+
+  // Initialize the LCD
+  lcd.init();
+
+  // Turn on the backlight
+  lcd.backlight();
+  Serial.print("lcd");
+  // Print a message to the LCD
+  lcd.setCursor(0, 0); // Set cursor to column 0, row 0
+  lcd.print("Hello, ESP32!");
+
+  lcd.setCursor(0, 1); // Set cursor to column 0, row 1
+  lcd.print("I2C  gLCD Display");
+  lcd.setCursor(0, 0);
 
   // nfc
   nfc.begin();
@@ -422,7 +458,8 @@ void setup()
 
 void loop()
 {
-
+  lcd.clear();
+  lcd.print("randi ko choro");
   bool success;
   uint8_t responseLength = 32;
 
@@ -447,7 +484,7 @@ void loop()
       delay(25);
       Serial.print("Mobile device found");
 
-      // extyract the payload
+      // extract the payload
       String payload_tag = extract_payload(response, responseLength);
 
       // TODO: handle payload here
