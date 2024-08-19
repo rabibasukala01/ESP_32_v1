@@ -1,4 +1,4 @@
-
+#include <ArduinoJson.h>
 // --------------------------------------------------------------------------------
 // for lcd
 #include <LiquidCrystal_I2C.h>
@@ -35,7 +35,7 @@ TinyGPSPlus gps;             // The TinyGPS++ object
 float latitude, longitude; // Variables to store latitude and longitude
 
 // for server
-String BASE_URL = "http://192.168.254.18:8000";
+String BASE_URL = "http://192.168.254.10:8000";
 #define GPS_URL BASE_URL + "/vehicle/update_coords"
 #define IN_URL BASE_URL + "/fare/scanned/in"
 #define OUT_URL BASE_URL + "/fare/scanned/out"
@@ -47,6 +47,52 @@ String BASE_URL = "http://192.168.254.18:8000";
 
 // for each device/bus/driver_account_id
 int GPS_ID = 7;
+
+// Function to parse and extract JSON
+void parseJsonResponse(const String response)
+{
+
+  Serial.print("Response length: ");
+  Serial.println(response.length());
+
+  if (response.length() == 0)
+  {
+    Serial.println("Empty response received.");
+    return;
+  }
+
+  JsonDocument doc; // Adjust the size if needed
+  DeserializationError error = deserializeJson(doc, response);
+
+  if (error)
+  {
+    Serial.print("deserializeJson() failed: ");
+    Serial.println(error.c_str());
+    return;
+  }
+
+  // Extract values
+  String message = doc["message"].as<String>();
+  String amount = doc["amount"].as<String>();
+
+  // Serial.print("Success: ");
+  // Serial.println(success);
+  // Serial.print("Amount: ");
+  // Serial.println(amount);
+  lcd.setCursor(0, 0);
+  if (message.length() <= 4)
+  {
+    lcd.print(message + " Rs. " + amount);
+  }
+  else
+  {
+    lcd.print(message.substring(0, 16));
+    lcd.print("                "); // Clear the second line
+    lcd.setCursor(0, 1);
+    lcd.print(message.substring(16) + " Rs. " + amount);
+  }
+  delay(15);
+}
 
 // function for nfc reader
 String nfc_reader()
@@ -65,8 +111,7 @@ String nfc_reader()
 
     if (success)
     {
-      lcd.clear();
-      lcd.print("Authenticated");
+
       digitalWrite(BUZZER_PIN, HIGH);
       delay(50); // Wait for m second
       // Turn the LED off
@@ -93,6 +138,8 @@ String nfc_reader()
       else
       {
         Serial.println("Failed to Scan.");
+        lcd.clear();
+        lcd.print("Failed to Scan.");
       }
     }
     else
@@ -126,8 +173,9 @@ void connectToWiFi()
   }
 }
 
-void postRequest(String jsonPayload, String URL)
+String postRequest(String jsonPayload, String URL)
 {
+  String response = "";
   if (WiFi.status() == WL_CONNECTED)
   {
     // Send HTTP POST request
@@ -141,15 +189,18 @@ void postRequest(String jsonPayload, String URL)
     {
       Serial.print("HTTP Response code:");
       Serial.println(httpResponseCode);
-      String response = http.getString();
-      Serial.print("Response message: ");
-      Serial.println(response);
+      response = http.getString();
+      // Serial.print("Response message: ");
+      // Serial.println(response);
     }
     else
     {
       Serial.print("Error code:");
+      lcd.clear();
+      lcd.print("Error code: ");
+      lcd.print(httpResponseCode);
       Serial.println(httpResponseCode);
-      String response = http.getString();
+      response = http.getString();
       Serial.print("Response message: ");
       Serial.println(response);
     }
@@ -161,6 +212,7 @@ void postRequest(String jsonPayload, String URL)
     Serial.println("WiFi Disconnected, connecting again...");
     connectToWiFi(); // Reconnect to WiFi if disconnected
   }
+  return response;
 }
 
 // For storing NFC scan data
@@ -246,6 +298,10 @@ void updateScanCount(String tagData)
   if (scanCount == -1)
   {
     Serial.println("Error reading scan count");
+    lcd.clear();
+    lcd.print("Error reading scan");
+    delay(15);
+    lcd.clear();
     return;
   }
   if (scanCount == 0)
@@ -254,14 +310,21 @@ void updateScanCount(String tagData)
 
     storeScanData(tagData, 1);
     Serial.println("First scan for tag: " + tagData);
+
+    lcd.clear();
+    // give feedback to commuter that you have scanned and ready to travel
+    lcd.print("Scanned ");
+    lcd.setCursor(0, 1);
+    lcd.print("Successfully");
+
     gps.encode(gpsSerial.read());
-    // float first_lat = gps.location.lat();
-    // float first_lng = gps.location.lng();
+    // float first_lat = gps.location.lat();       // TODO : uncomment for gps data
+    // float first_lng = gps.location.lng();        // TODO : uncomment for gps data
     // TODO : get the gps data
     float first_lat = 27.675814;
     float first_lng = 85.429938;
     String jsonPayload = "{\"nfc_id\":\"" + tagData + "\",\"gps_id\":\"" + String(GPS_ID) + "\",\"Lat\":\"" + String(first_lat, 6) + "\",\"Lng\":\"" + String(first_lng, 6) + "\"}";
-    postRequest(jsonPayload, IN_URL);
+    String a = postRequest(jsonPayload, IN_URL);
   }
   else
   {
@@ -270,14 +333,30 @@ void updateScanCount(String tagData)
     Serial.println("second scan for tag: " + tagData);
 
     gps.encode(gpsSerial.read());
-    // float second_lat = gps.location.lat();
-    // float second_lng = gps.location.lng();
+    // float second_lat = gps.location.lat();     // TODO : uncomment for gps data
+    // float second_lng = gps.location.lng();     // TODO : uncomment for gps data
     // TODO : get the gps data
     float second_lat = 27.671371;
     float second_lng = 85.420833;
     String jsonPayload = "{\"nfc_id\":\"" + tagData + "\",\"gps_id\":\"" + String(GPS_ID) + "\",\"Lat\":\"" + String(second_lat, 6) + "\",\"Lng\":\"" + String(second_lng, 6) + "\"}";
+
+    lcd.clear();
     Serial.println("Verifying payment...");
-    postRequest(jsonPayload, OUT_URL);
+    lcd.print("Verifying");
+    lcd.setCursor(0, 1);
+    lcd.print("payment...");
+    delay(10);
+
+    String response = postRequest(jsonPayload, OUT_URL);
+    lcd.clear();
+    lcd.print("Verified !");
+    delay(10);
+    lcd.clear();
+    parseJsonResponse(response);
+    Serial.println("----------------------------------------------------------------");
+    Serial.println(response);
+    Serial.println("----------------------------------------------------------------");
+
     // delete the data
     deleteScanData(tagData);
   }
@@ -298,6 +377,12 @@ void updateScanCountMOBILE(String tagData)
 
     storeScanData(tagData, 1);
     Serial.println("First scan for tag: " + tagData);
+
+    lcd.clear();
+    // give feedback to commuter that you have scanned and ready to travel
+    lcd.print("Scanned ");
+    lcd.setCursor(0, 1);
+    lcd.print("Successfully");
 
     // coords in first scan
     gps.encode(gpsSerial.read());
@@ -326,8 +411,23 @@ void updateScanCountMOBILE(String tagData)
     float second_lng = 85.420833;
 
     String jsonPayload = "{\"nfc_id\":\"" + tagData + "\",\"gps_id\":\"" + String(GPS_ID) + "\",\"Lat\":\"" + String(second_lat, 6) + "\",\"Lng\":\"" + String(second_lng, 6) + "\"}";
+    lcd.clear();
     Serial.println("Verifying payment...");
-    postRequest(jsonPayload, MOBILE_URL_OUT);
+    lcd.print("Verifying");
+    lcd.setCursor(0, 1);
+    lcd.print("payment...");
+    delay(10);
+
+    String response = postRequest(jsonPayload, MOBILE_URL_OUT);
+    lcd.clear();
+    lcd.print("Verified !");
+    delay(10);
+    lcd.clear();
+    parseJsonResponse(response);
+    Serial.println("----------------------------------------------------------------");
+    Serial.println(response);
+    Serial.println("----------------------------------------------------------------");
+    parseJsonResponse(response);
     // delete the data
     deleteScanData(tagData);
   }
@@ -408,7 +508,7 @@ void setup()
 
   // Turn on the backlight
   lcd.backlight();
-  Serial.print("lcd");
+
   // Print a message to the LCD
   lcd.setCursor(0, 0); // Set cursor to column 0, row 0
   lcd.print("Hello, ESP32!");
@@ -459,7 +559,8 @@ void setup()
 void loop()
 {
   lcd.clear();
-  lcd.print("randi ko choro");
+  lcd.setCursor(0, 0);
+
   bool success;
   uint8_t responseLength = 32;
 
@@ -484,10 +585,15 @@ void loop()
       delay(25);
       Serial.print("Mobile device found");
 
+      digitalWrite(BUZZER_PIN, HIGH);
+      delay(50); // Wait for m second
+      // Turn the buzzer off
+      digitalWrite(BUZZER_PIN, LOW);
+
       // extract the payload
       String payload_tag = extract_payload(response, responseLength);
 
-      // TODO: handle payload here
+      // handle payload here
       updateScanCountMOBILE(payload_tag);
     }
     else
@@ -502,11 +608,21 @@ void loop()
         // Call for update scan count
         updateScanCount(nfc_hex_data);
       }
+      else
+      {
+        Serial.println("Failed to scan NFC card.");
+        lcd.clear();
+        lcd.print("Failed to scan ");
+        lcd.setCursor(0, 1);
+        lcd.println("Try again.");
+      }
     }
   }
   else
   {
     Serial.println("Scan Here!");
+    lcd.clear();
+    lcd.print("Scan Below ");
   }
 
   delay(1000); // Adjust the delay as needed
